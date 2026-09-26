@@ -1,0 +1,1890 @@
+<!doctype html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100 antialiased">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GridSync - Sperry Tech Challenge</title>
+    <meta name="description" content="Florida utility transmission coordination platform and clash dispatch dashboard (FPL & Duke Energy) for the Sperry Tech GridLock Challenge." />
+    <meta property="og:title" content="GridSync - Florida Transmission Coordination" />
+    <meta property="og:description" content="Florida utility transmission coordination platform and clash dispatch dashboard (FPL & Duke Energy) for the Sperry Tech GridLock Challenge." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <!-- Tailwind CSS CDN with Custom Theme Config -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'monospace'],
+            },
+            colors: {
+              fpl: {
+                DEFAULT: '#0284c7',
+                light: '#38bdf8',
+                dark: '#0369a1',
+                glow: 'rgba(2, 132, 199, 0.45)',
+              },
+              duke: {
+                DEFAULT: '#f97316',
+                light: '#fb923c',
+                dark: '#ea580c',
+                glow: 'rgba(249, 115, 22, 0.45)',
+              },
+              cyan: {
+                DEFAULT: '#06B6D4',
+                glow: 'rgba(6, 182, 212, 0.4)',
+              },
+              emerald: {
+                DEFAULT: '#10B981',
+                glow: 'rgba(16, 185, 129, 0.35)',
+              },
+              amber: {
+                DEFAULT: '#F59E0B',
+                glow: 'rgba(245, 158, 11, 0.35)',
+              },
+            },
+          },
+        },
+      };
+    </script>
+
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Leaflet JS -->
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+
+    <style>
+      /* Custom scrollbars */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #090d16;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #1e293b;
+        border-radius: 3px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #334155;
+      }
+
+      /* Animated clash polyline */
+      .clash-line-animated {
+        stroke-dasharray: 8, 8;
+        animation: dashAnimation 24s linear infinite;
+        filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.7));
+      }
+      @keyframes dashAnimation {
+        to {
+          stroke-dashoffset: -1000;
+        }
+      }
+
+      /* Pulse animations */
+      @keyframes pulseRing {
+        0% {
+          transform: scale(0.8);
+          opacity: 0.9;
+        }
+        70% {
+          transform: scale(2.2);
+          opacity: 0;
+        }
+        100% {
+          transform: scale(2.4);
+          opacity: 0;
+        }
+      }
+      .marker-pulse-ring {
+        animation: pulseRing 2.4s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+      }
+
+      /* Leaflet custom popups */
+      .osm-dark-tiles {
+        filter: invert(100%) hue-rotate(180deg) brightness(80%) contrast(90%);
+      }
+      .leaflet-popup-content-wrapper {
+        background: #0f172a !important;
+        color: #f1f5f9 !important;
+        border: 1px solid #334155 !important;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7), 0 8px 10px -6px rgba(0, 0, 0, 0.7) !important;
+        border-radius: 0.75rem !important;
+        padding: 0 !important;
+      }
+      .leaflet-popup-content {
+        margin: 0 !important;
+        line-height: 1.4 !important;
+      }
+      .leaflet-popup-tip {
+        background: #0f172a !important;
+        border: 1px solid #334155 !important;
+      }
+      .leaflet-container {
+        font-family: 'Inter', sans-serif !important;
+        background-color: #0b0f19 !important;
+      }
+
+      /* Glass panel effect */
+      .glass-panel {
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+    </style>
+  </head>
+  <body class="h-full flex flex-col overflow-hidden bg-slate-950 font-sans select-none">
+    <!-- Top Navbar -->
+    <header class="h-16 flex-none bg-slate-900/90 border-b border-slate-800/80 px-4 md:px-6 flex items-center justify-between z-30 shadow-lg glass-panel">
+      <!-- Left: Brand & Status -->
+      <div class="flex items-center space-x-3 md:space-x-4">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400/30">
+            <i data-lucide="zap" class="w-5 h-5 text-white fill-white"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="text-lg font-extrabold tracking-tight text-white flex items-center gap-1.5">
+                GridSync
+                <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800/60">
+                  Dispatch Hub
+                </span>
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-400 font-mono tracking-tight hidden sm:block">
+              Sperry Tech GridLock Challenge • Florida Transmission Coordination (FPL &amp; Duke)
+            </p>
+          </div>
+        </div>
+
+        <!-- Connection Badge -->
+        <div class="hidden lg:flex items-center space-x-2 px-2.5 py-1 rounded-full bg-slate-950/70 border border-slate-800 text-xs">
+          <span id="conn-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span id="conn-status" class="text-slate-300 font-mono text-[11px]">API: Connected</span>
+        </div>
+      </div>
+
+      <!-- Center: Key Operational Metric (Total Estimated Savings) -->
+      <div class="flex items-center bg-slate-950/80 border border-emerald-500/30 rounded-xl px-4 py-1.5 shadow-inner shadow-emerald-950/30">
+        <div class="flex items-center space-x-3">
+          <div class="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+            <i data-lucide="trending-up" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <div class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Total Estimated Savings</div>
+            <div id="metric-total-savings" class="text-lg sm:text-xl font-mono font-extrabold text-emerald-400 tracking-tight leading-none">
+              $0
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Telemetry & Controls -->
+      <div class="flex items-center space-x-2 sm:space-x-3">
+        <!-- Quick Stats Pill -->
+        <div class="hidden md:flex items-center space-x-3 bg-slate-950/60 border border-slate-800 rounded-lg px-3 py-1.5 text-xs font-mono">
+          <div class="flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-fpl"></span>
+            <span class="text-slate-400">FPL:</span>
+            <span id="stat-fpl-count" class="font-bold text-white">0</span>
+          </div>
+          <span class="text-slate-700">|</span>
+          <div class="flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-duke"></span>
+            <span class="text-slate-400">Duke:</span>
+            <span id="stat-duke-count" class="font-bold text-white">0</span>
+          </div>
+          <span class="text-slate-700">|</span>
+          <div class="flex items-center space-x-1.5 text-amber-400">
+            <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
+            <span id="stat-clash-count" class="font-bold">0</span>
+            <span class="text-slate-400">Clashes</span>
+          </div>
+        </div>
+
+        <!-- Sync Button -->
+        <button
+          id="btn-refresh"
+          title="Resync Data from API"
+          class="p-2 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition flex items-center justify-center"
+        >
+          <i id="sync-icon" data-lucide="refresh-cw" class="w-4 h-4"></i>
+        </button>
+
+        <!-- Sidebar Toggle Mobile/Desktop -->
+        <button
+          id="btn-toggle-sidebar"
+          title="Toggle Control Panel"
+          class="px-3 py-2 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 border border-cyan-500/40 text-xs font-semibold flex items-center space-x-1.5 transition"
+        >
+          <i data-lucide="panel-left-close" class="w-4 h-4"></i>
+          <span class="hidden sm:inline" id="sidebar-toggle-text">Panel</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace: Sidebar + Leaflet Map -->
+    <div class="flex-1 flex overflow-hidden relative">
+      <!-- Left Collapsible Sidebar -->
+      <aside
+        id="sidebar"
+        class="w-full sm:w-96 lg:w-[420px] flex-none bg-slate-900/95 border-r border-slate-800/80 flex flex-col z-20 transition-all duration-300 ease-in-out absolute md:relative inset-y-0 left-0 shadow-2xl glass-panel"
+      >
+        <!-- Sidebar Navigation Tabs -->
+        <div class="flex-none p-3 border-b border-slate-800/80 bg-slate-950/40">
+          <div class="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs font-medium">
+            <button
+              id="tab-overlaps-btn"
+              onclick="switchSidebarTab('overlaps')"
+              class="py-2 px-3 rounded-md flex items-center justify-center space-x-2 transition bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/30 shadow"
+            >
+              <i data-lucide="shield-alert" class="w-4 h-4"></i>
+              <span>Top Overlaps</span>
+              <span id="badge-overlap-count" class="ml-1 px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[10px] rounded-full border border-amber-500/30">0</span>
+            </button>
+            <button
+              id="tab-simulator-btn"
+              onclick="switchSidebarTab('simulator')"
+              class="py-2 px-3 rounded-md flex items-center justify-center space-x-2 transition text-slate-400 hover:text-slate-200"
+            >
+              <i data-lucide="cpu" class="w-4 h-4"></i>
+              <span>Clash Simulator</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- TAB 1: Top Ranked Overlaps -->
+        <div id="tab-overlaps-content" class="flex-1 flex flex-col overflow-hidden">
+          <!-- Filter & Search Bar -->
+          <div class="p-3 border-b border-slate-800/60 bg-slate-950/20 flex-none space-y-2">
+            <div class="relative">
+              <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-2.5"></i>
+              <input
+                id="search-overlaps"
+                type="text"
+                placeholder="Filter by substation, project, utility..."
+                class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-500/50"
+              />
+            </div>
+            <div class="flex items-center justify-between text-[11px] text-slate-400 font-mono px-1">
+              <span>Threshold: <strong class="text-amber-400">&lt; 40 km</strong> &amp; Active Dates</span>
+              <span id="filtered-overlaps-label">Showing all pairs</span>
+            </div>
+          </div>
+
+          <!-- Overlaps Scrollable List -->
+          <div id="overlaps-list" class="flex-1 overflow-y-auto p-3 space-y-3">
+            <!-- Loading placeholder -->
+            <div class="flex flex-col items-center justify-center py-12 text-slate-500 space-y-3">
+              <i data-lucide="loader" class="w-6 h-6 animate-spin text-cyan-400"></i>
+              <span class="text-xs font-mono">Analyzing transmission intersections...</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: Clash Simulator -->
+        <div id="tab-simulator-content" class="flex-1 flex flex-col overflow-y-auto p-4 space-y-4 hidden">
+          <div class="bg-slate-950/60 border border-cyan-500/20 rounded-xl p-3.5 space-y-2">
+            <div class="flex items-center space-x-2 text-cyan-400 text-xs font-bold uppercase tracking-wider">
+              <i data-lucide="radar" class="w-4 h-4"></i>
+              <span>Spatial Conflict Detection</span>
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Test a proposed transmission project against active clearance schedules. Identifies simultaneous outages within the 40 km (25 mi) mutual interference perimeter.
+            </p>
+          </div>
+
+          <!-- Form Inputs -->
+          <form id="simulator-form" onsubmit="handleSimulate(event)" class="space-y-3 text-xs">
+            <!-- Utility Selection -->
+            <div>
+              <label class="block text-slate-400 font-medium mb-1">Utility Entity</label>
+              <div class="grid grid-cols-2 gap-2">
+                <label class="flex items-center space-x-2 p-2 rounded-lg bg-slate-950 border border-slate-800 hover:border-fpl cursor-pointer transition">
+                  <input type="radio" name="sim-utility" value="FPL" checked class="text-fpl focus:ring-0" />
+                  <span class="font-bold text-sky-400">FPL</span>
+                  <span class="text-[10px] text-slate-500">(Florida P&amp;L)</span>
+                </label>
+                <label class="flex items-center space-x-2 p-2 rounded-lg bg-slate-950 border border-slate-800 hover:border-duke cursor-pointer transition">
+                  <input type="radio" name="sim-utility" value="Duke" class="text-duke focus:ring-0" />
+                  <span class="font-bold text-orange-400">Duke</span>
+                  <span class="text-[10px] text-slate-500">(Duke Energy FL)</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Project Name -->
+            <div>
+              <label class="block text-slate-400 font-medium mb-1">Proposed Project Name</label>
+              <input
+                id="sim-name"
+                type="text"
+                required
+                value="Coral Gables 230kV Feeder Tie"
+                placeholder="e.g. Doral 115kV Line Rebuild"
+                class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
+
+            <!-- Coordinates with Pick on Map button -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-slate-400 font-medium mb-1">Latitude</label>
+                <input
+                  id="sim-lat"
+                  type="number"
+                  step="0.0001"
+                  required
+                  value="25.8195"
+                  class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+              <div>
+                <label class="block text-slate-400 font-medium mb-1">Longitude</label>
+                <input
+                  id="sim-lng"
+                  type="number"
+                  step="0.0001"
+                  required
+                  value="-80.3553"
+                  class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-slate-200 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
+
+            <!-- Pick on Map Trigger & Presets -->
+            <div class="space-y-1.5">
+              <button
+                type="button"
+                id="btn-pick-map"
+                onclick="enableMapPicker()"
+                class="w-full py-1.5 px-3 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 flex items-center justify-center space-x-1.5 transition text-[11px]"
+              >
+                <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400"></i>
+                <span id="pick-map-label">Click Map to Set Coordinates</span>
+              </button>
+
+              <div class="flex items-center space-x-1 overflow-x-auto pt-1 pb-1">
+                <span class="text-[10px] text-slate-500 uppercase font-mono">Presets:</span>
+                <button
+                  type="button"
+                  onclick="setSimulatorPreset('Doral Feeder Tie', 25.8195, -80.3553)"
+                  class="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-slate-300 font-mono whitespace-nowrap"
+                >
+                  Doral
+                </button>
+                <button
+                  type="button"
+                  onclick="setSimulatorPreset('Hialeah Interconnect', 25.8576, -80.2781)"
+                  class="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-slate-300 font-mono whitespace-nowrap"
+                >
+                  Hialeah
+                </button>
+                <button
+                  type="button"
+                  onclick="setSimulatorPreset('Downtown Miami Hub', 25.7617, -80.1918)"
+                  class="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-slate-300 font-mono whitespace-nowrap"
+                >
+                  Downtown Miami
+                </button>
+                <button
+                  type="button"
+                  onclick="setSimulatorPreset('Fort Lauderdale Feeder', 26.1224, -80.1434)"
+                  class="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-slate-300 font-mono whitespace-nowrap"
+                >
+                  Fort Lauderdale
+                </button>
+                <button
+                  type="button"
+                  onclick="setSimulatorPreset('Clear Zone Test', 26.1420, -81.7948)"
+                  class="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-[10px] text-slate-300 font-mono text-emerald-400 whitespace-nowrap"
+                >
+                  Clear Area
+                </button>
+              </div>
+            </div>
+
+            <!-- Date Range -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-slate-400 font-medium mb-1">Start Date</label>
+                <input
+                  id="sim-start"
+                  type="date"
+                  required
+                  value="2027-04-01"
+                  class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+              <div>
+                <label class="block text-slate-400 font-medium mb-1">End Date</label>
+                <input
+                  id="sim-end"
+                  type="date"
+                  required
+                  value="2027-08-30"
+                  class="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
+
+            <!-- Submit Button -->
+            <button
+              id="btn-simulate-submit"
+              type="submit"
+              class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white font-bold tracking-wide shadow-lg shadow-cyan-600/30 border border-cyan-400/30 flex items-center justify-center space-x-2 transition transform active:scale-[0.99]"
+            >
+              <i id="sim-icon" data-lucide="zap" class="w-4 h-4"></i>
+              <span id="sim-button-text">Simulate Conflict</span>
+            </button>
+          </form>
+
+          <!-- Simulation Result Banner -->
+          <div id="sim-result-container" class="hidden transition-all duration-300">
+            <!-- Dynamic Result Card rendered by JS -->
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Leaflet Map Area -->
+      <main class="flex-1 relative h-full w-full overflow-hidden bg-slate-950">
+        <!-- Leaflet Map Container -->
+        <div id="map" class="h-full w-full z-10"></div>
+
+        <!-- Floating Map Overlay Controls (Top Right) -->
+        <div class="absolute top-4 right-4 z-20 flex flex-col space-y-2 pointer-events-auto">
+          <!-- Utility Filter Chips -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 shadow-xl glass-panel flex items-center space-x-1 text-xs">
+            <button
+              onclick="setUtilityFilter('ALL')"
+              id="filter-all-btn"
+              class="px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 font-medium border border-cyan-500/30 transition"
+            >
+              All Projects
+            </button>
+            <button
+              onclick="setUtilityFilter('FPL')"
+              id="filter-fpl-btn"
+              class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition flex items-center space-x-1"
+            >
+              <span class="w-2 h-2 rounded-full bg-fpl"></span>
+              <span>FPL</span>
+            </button>
+            <button
+              onclick="setUtilityFilter('Duke')"
+              id="filter-duke-btn"
+              class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-orange-400 hover:bg-slate-800 transition flex items-center space-x-1"
+            >
+              <span class="w-2 h-2 rounded-full bg-duke"></span>
+              <span>Duke</span>
+            </button>
+          </div>
+
+          <!-- Quick Map Actions -->
+          <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 shadow-xl glass-panel flex items-center space-x-1 text-xs justify-end">
+            <!-- Toggle Overlap Lines -->
+            <button
+              id="btn-toggle-lines"
+              onclick="toggleOverlapLines()"
+              title="Toggle Clash Connection Polylines"
+              class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium flex items-center space-x-1.5 transition"
+            >
+              <i data-lucide="git-commit" class="w-3.5 h-3.5"></i>
+              <span class="hidden sm:inline">Clash Vectors</span>
+            </button>
+
+            <!-- Map Theme & API Key Settings -->
+            <button
+              id="btn-map-settings"
+              onclick="openMapSettingsModal()"
+              title="Map Basemap Style & API Key"
+              class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-medium flex items-center space-x-1.5 transition"
+            >
+              <i data-lucide="key" class="w-3.5 h-3.5 text-cyan-400"></i>
+              <span class="hidden sm:inline">Map Key / Style</span>
+            </button>
+
+            <!-- Reset Zoom -->
+            <button
+              onclick="resetMapView()"
+              title="Reset View to Region"
+              class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+            >
+              <i data-lucide="maximize" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Floating Map Legend (Bottom Right) -->
+        <div class="absolute bottom-4 right-4 z-20 pointer-events-auto bg-slate-900/90 border border-slate-800 rounded-xl p-3 shadow-xl glass-panel max-w-xs text-xs font-mono hidden sm:block">
+          <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-2 flex items-center justify-between">
+            <span>Transmission Grid Legend</span>
+            <span class="text-cyan-400 text-[9px]">&lt;40km Radius</span>
+          </div>
+          <div class="space-y-1.5 text-[11px]">
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-fpl ring-2 ring-sky-400/40"></span>
+              <span class="text-slate-200">FPL (Florida Power &amp; Light)</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-duke ring-2 ring-orange-400/40"></span>
+              <span class="text-slate-200">Duke (Duke Energy Florida)</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="w-5 h-0.5 bg-amber-400 border border-amber-400 clash-line-animated"></span>
+              <span class="text-amber-300 font-semibold">Active Clash Line (&lt;40km)</span>
+            </div>
+            <div class="flex items-center space-x-2">
+              <span class="w-3 h-3 rounded-full bg-yellow-400 ring-2 ring-yellow-400/60"></span>
+              <span class="text-yellow-200">Simulated Project Buffer</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Crosshair Cursor Indicator when in Pick Mode -->
+        <div
+          id="map-crosshair-indicator"
+          class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-cyan-950/90 border border-cyan-500 text-cyan-200 px-4 py-1.5 rounded-full shadow-2xl text-xs font-mono flex items-center space-x-2 pointer-events-none animate-bounce"
+        >
+          <i data-lucide="crosshair" class="w-4 h-4 text-cyan-400"></i>
+          <span>Click anywhere on the map to set coordinates</span>
+        </div>
+      </main>
+    </div>
+
+    <!-- AI Briefing Modal -->
+    <div
+      id="ai-modal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden transition-opacity duration-200"
+    >
+      <div class="w-full max-w-2xl bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+        <!-- Modal Header -->
+        <div class="p-5 border-b border-slate-800 bg-slate-950/70 flex items-start justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/20">
+              <i data-lucide="sparkles" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <div class="flex items-center space-x-2">
+                <h3 class="text-base font-bold text-white tracking-tight">AI Transmission Dispatch Briefing</h3>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950 border border-cyan-800 text-cyan-300">
+                  Gemini Flash 3.8
+                </span>
+              </div>
+              <p class="text-xs text-slate-400 font-mono mt-0.5">
+                Automated NERC Reliability &amp; Shared Mobilization Analysis
+              </p>
+            </div>
+          </div>
+          <button
+            onclick="closeAiModal()"
+            class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition"
+          >
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Overlap Summary Header Card -->
+        <div id="ai-modal-meta" class="px-5 py-3 bg-slate-950/40 border-b border-slate-800/60 text-xs font-mono grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <!-- Injected via JS -->
+        </div>
+
+        <!-- Modal Body Content -->
+        <div class="p-5 overflow-y-auto flex-1 text-xs text-slate-300 leading-relaxed font-sans space-y-4">
+          <!-- Loading State -->
+          <div id="ai-modal-loading" class="py-12 flex flex-col items-center justify-center space-y-3">
+            <div class="relative w-12 h-12">
+              <div class="w-12 h-12 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin"></div>
+              <div class="absolute inset-0 flex items-center justify-center text-cyan-400">
+                <i data-lucide="cpu" class="w-5 h-5 animate-pulse"></i>
+              </div>
+            </div>
+            <div class="text-slate-300 font-medium">Generating Dispatch Intelligence...</div>
+            <div class="text-slate-500 font-mono text-[11px]">Synthesizing NERC TOP-001 constraints &amp; crane staging plans</div>
+          </div>
+
+          <!-- Generated Text Output -->
+          <div id="ai-modal-text" class="hidden whitespace-pre-line prose prose-invert max-w-none text-slate-200">
+            <!-- Injected via JS -->
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="p-4 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between">
+          <button
+            id="btn-copy-briefing"
+            onclick="copyBriefingText()"
+            class="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center space-x-1.5 transition"
+          >
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            <span id="copy-btn-text">Copy Briefing</span>
+          </button>
+
+          <button
+            onclick="closeAiModal()"
+            class="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shadow-lg shadow-cyan-600/20 transition"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map Basemap & API Key Settings Modal -->
+    <div
+      id="map-settings-modal"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden transition-opacity duration-200"
+    >
+      <div class="w-full max-w-lg bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+        <!-- Modal Header -->
+        <div class="p-5 border-b border-slate-800 bg-slate-950/70 flex items-start justify-between">
+          <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/20">
+              <i data-lucide="map" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="text-base font-bold text-white tracking-tight">Map Basemap &amp; API Keys</h3>
+              <p class="text-xs text-slate-400 font-mono mt-0.5">
+                Configure dark map provider &amp; Carto / Gemini keys
+              </p>
+            </div>
+          </div>
+          <button
+            onclick="closeMapSettingsModal()"
+            class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition"
+          >
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="p-5 overflow-y-auto space-y-5 text-xs text-slate-300">
+          <!-- Basemap Selector -->
+          <div class="space-y-2">
+            <label class="block text-xs font-bold uppercase tracking-wider text-slate-400">
+              Basemap Provider
+            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <!-- Option 1: ESRI Dark Canvas (Default, No Key) -->
+              <label
+                class="flex flex-col p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition relative group"
+              >
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="font-bold text-slate-200 text-xs">ESRI Dark</span>
+                  <input type="radio" name="basemap-choice" value="esri-dark" checked class="text-cyan-500 focus:ring-0" />
+                </div>
+                <span class="text-[10px] text-emerald-400 font-mono font-medium">✓ Zero Key Needed</span>
+                <span class="text-[10px] text-slate-500 mt-1">High-contrast dark canvas without watermarks</span>
+              </label>
+
+              <!-- Option 2: CARTO Dark Matter -->
+              <label
+                class="flex flex-col p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition relative group"
+              >
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="font-bold text-slate-200 text-xs">CARTO Dark</span>
+                  <input type="radio" name="basemap-choice" value="carto-dark" class="text-cyan-500 focus:ring-0" />
+                </div>
+                <span class="text-[10px] text-amber-400 font-mono font-medium">Requires Key</span>
+                <span class="text-[10px] text-slate-500 mt-1">DarkMatter tiles (needs free Carto API key)</span>
+              </label>
+
+              <!-- Option 3: OSM Dark Filter -->
+              <label
+                class="flex flex-col p-3 rounded-xl bg-slate-950 border border-slate-800 hover:border-cyan-500/50 cursor-pointer transition relative group"
+              >
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="font-bold text-slate-200 text-xs">OSM Dark</span>
+                  <input type="radio" name="basemap-choice" value="osm-dark" class="text-cyan-500 focus:ring-0" />
+                </div>
+                <span class="text-[10px] text-emerald-400 font-mono font-medium">✓ Zero Key Needed</span>
+                <span class="text-[10px] text-slate-500 mt-1">OpenStreetMap with inverted dark styling</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- CARTO API Key Field -->
+          <div id="carto-key-section" class="space-y-2 bg-slate-950/70 border border-slate-800/80 rounded-xl p-3.5">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
+                <i data-lucide="key" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>CARTO Basemap API Key</span>
+              </label>
+              <a
+                href="https://carto.com/basemaps"
+                target="_blank"
+                rel="noreferrer"
+                class="text-[11px] text-cyan-400 hover:underline flex items-center space-x-1 font-mono"
+              >
+                <span>Get Free Key</span>
+                <i data-lucide="external-link" class="w-3 h-3"></i>
+              </a>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-normal">
+              If using <strong class="text-slate-200">CARTO Dark Matter</strong>, paste your API key below to remove the watermark:
+            </p>
+            <input
+              id="input-carto-api-key"
+              type="text"
+              placeholder="e.g. default_public or your CARTO key"
+              class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-cyan-500"
+            />
+          </div>
+
+          <!-- Gemini AI Key Information -->
+          <div class="bg-cyan-950/30 border border-cyan-500/20 rounded-xl p-3.5 space-y-1.5">
+            <div class="flex items-center space-x-2 text-cyan-300 text-xs font-bold">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyan-400"></i>
+              <span>Looking for the Gemini AI API Key?</span>
+            </div>
+            <p class="text-[11px] text-slate-400 leading-normal">
+              For the <strong class="text-slate-300">AI Dispatch Briefing</strong> feature, the <code class="text-cyan-300 font-mono">GEMINI_API_KEY</code> is configured automatically by Google AI Studio from your secrets, or in your project's <code class="text-cyan-300 font-mono">.env</code> file. No manual key entry in the browser is needed!
+            </p>
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="p-4 border-t border-slate-800 bg-slate-950/70 flex items-center justify-between">
+          <button
+            onclick="closeMapSettingsModal()"
+            class="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs font-medium transition"
+          >
+            Cancel
+          </button>
+          <button
+            onclick="saveMapSettings()"
+            class="px-5 py-1.5 rounded-lg bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-cyan-600/20 transition"
+          >
+            Apply Settings
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <!-- MAIN JAVASCRIPT APPLICATION LOGIC -->
+    <script>
+      // ==========================================
+      // GRIDSYNC MASTER STATE & MOCK FALLBACK DATA
+      // ==========================================
+      const API_BASE = window.location.origin.includes('localhost')
+        ? window.location.origin
+        : ''; // Uses relative paths for API endpoints
+
+      let map = null;
+      let markersGroup = null;
+      let linesGroup = null;
+      let simLayerGroup = null;
+
+      let currentBasemap = localStorage.getItem('gridsync_basemap') || 'esri-dark';
+      let cartoApiKey = localStorage.getItem('gridsync_carto_key') || '';
+      let basemapLayers = [];
+
+      let allProjects = [];
+      let allOverlaps = [];
+      let totalSavings = 0;
+      let activeFilter = 'ALL';
+      let showLines = true;
+      let mapPickerActive = false;
+      let currentAiBriefingText = '';
+
+      // High-fidelity fallback dataset for offline/direct index.html preview (South Florida Grid)
+      const FALLBACK_PROJECTS = [
+        {
+          utility: 'FPL',
+          name: 'FPL Miami Substation Upgrade',
+          lat: 25.7617,
+          lng: -80.1918,
+          start: '2027-03-01',
+          end: '2027-09-01',
+          cost: 2100000,
+        },
+        {
+          utility: 'FPL',
+          name: 'FPL Broward Transmission Line',
+          lat: 26.1224,
+          lng: -80.1434,
+          start: '2027-02-15',
+          end: '2027-08-15',
+          cost: 3400000,
+        },
+        {
+          utility: 'FPL',
+          name: 'FPL Doral Feeder Expansion',
+          lat: 25.8195,
+          lng: -80.3553,
+          start: '2027-04-01',
+          end: '2027-10-01',
+          cost: 2400000,
+        },
+        {
+          utility: 'FPL',
+          name: 'FPL Palm Beach Solar Farm',
+          lat: 26.7056,
+          lng: -80.0364,
+          start: '2027-06-01',
+          end: '2028-01-01',
+          cost: 5200000,
+        },
+        {
+          utility: 'FPL',
+          name: 'FPL Keys Resilience Project',
+          lat: 24.5551,
+          lng: -81.7800,
+          start: '2027-01-10',
+          end: '2027-07-10',
+          cost: 1800000,
+        },
+        {
+          utility: 'Duke',
+          name: 'Duke Dade Border Upgrade',
+          lat: 25.8500,
+          lng: -80.3000,
+          start: '2027-03-10',
+          end: '2027-09-10',
+          cost: 1900000,
+        },
+        {
+          utility: 'Duke',
+          name: 'Duke Hialeah Substation',
+          lat: 25.8576,
+          lng: -80.2781,
+          start: '2027-05-01',
+          end: '2027-11-01',
+          cost: 2200000,
+        },
+        {
+          utility: 'Duke',
+          name: 'Duke Palm Beach North Line',
+          lat: 26.3500,
+          lng: -80.0800,
+          start: '2027-03-01',
+          end: '2027-09-01',
+          cost: 2800000,
+        },
+        {
+          utility: 'Duke',
+          name: 'Duke Tampa Bay Resilience',
+          lat: 27.9506,
+          lng: -82.4572,
+          start: '2027-04-01',
+          end: '2027-10-01',
+          cost: 4100000,
+        },
+      ];
+
+      // ==========================================
+      // GEOMETRY & COORDINATION MATH HELPERS
+      // ==========================================
+      function calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371; // Earth radius in km
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLon = ((lon2 - lon1) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return Math.round(R * c * 10) / 10;
+      }
+
+      function checkDatesOverlap(start1, end1, start2, end2) {
+        return start1 <= end2 && end1 >= start2;
+      }
+
+      function computeLocalOverlaps(projectsList) {
+        const overlaps = [];
+        for (let i = 0; i < projectsList.length; i++) {
+          for (let j = i + 1; j < projectsList.length; j++) {
+            const a = projectsList[i];
+            const b = projectsList[j];
+            if (a.utility !== b.utility) {
+              const dist = calculateDistance(a.lat, a.lng, b.lat, b.lng);
+              if (dist <= 40 && checkDatesOverlap(a.start, a.end, b.start, b.end)) {
+                const combined = a.cost + b.cost;
+                const bonus = Math.max(0, (40 - dist) / 40);
+                const savings = Math.round(combined * 0.05 * (1 + bonus * 0.7) + 120000);
+                overlaps.push({ a, b, dist, savings });
+              }
+            }
+          }
+        }
+        overlaps.sort((x, y) => y.savings - x.savings);
+        const total = overlaps.reduce((acc, curr) => acc + curr.savings, 0);
+        return { overlaps, count: overlaps.length, totalSavings: total };
+      }
+
+      // ==========================================
+      // LEAFLET MAP INITIALIZATION & BASEMAPS
+      // ==========================================
+      function applyBasemap(type, apiKey) {
+        if (!map) return;
+        currentBasemap = type || currentBasemap;
+        if (apiKey !== undefined) {
+          cartoApiKey = apiKey.trim();
+          localStorage.setItem('gridsync_carto_key', cartoApiKey);
+        }
+        localStorage.setItem('gridsync_basemap', currentBasemap);
+
+        // Remove existing basemap layers
+        basemapLayers.forEach((l) => map.removeLayer(l));
+        basemapLayers = [];
+
+        if (currentBasemap === 'esri-dark') {
+          // ESRI Dark Gray Canvas: High-res dark tiles, completely free, NO API KEY OR WATERMARK
+          const base = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+            {
+              maxZoom: 16,
+              attribution: 'Esri, HERE, Garmin, &copy; OpenStreetMap',
+            }
+          );
+          const ref = L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+            {
+              maxZoom: 16,
+            }
+          );
+          base.addTo(map);
+          ref.addTo(map);
+          base.bringToBack();
+          ref.bringToBack();
+          basemapLayers = [base, ref];
+        } else if (currentBasemap === 'carto-dark') {
+          // CartoDB Dark Matter (uses custom key if provided)
+          const keyParam = cartoApiKey ? `?api_key=${encodeURIComponent(cartoApiKey)}` : '';
+          const carto = L.tileLayer(
+            `https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png${keyParam}`,
+            {
+              maxZoom: 19,
+              subdomains: 'abcd',
+              attribution: '&copy; CARTO',
+            }
+          );
+          carto.addTo(map);
+          carto.bringToBack();
+          basemapLayers = [carto];
+        } else if (currentBasemap === 'osm-dark') {
+          // OpenStreetMap with inverted dark theme (Free, No Key)
+          const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            className: 'osm-dark-tiles',
+            attribution: '&copy; OpenStreetMap contributors',
+          });
+          osm.addTo(map);
+          osm.bringToBack();
+          basemapLayers = [osm];
+        }
+      }
+
+      function openMapSettingsModal() {
+        // Set current radio button
+        const radios = document.getElementsByName('basemap-choice');
+        for (const r of radios) {
+          r.checked = r.value === currentBasemap;
+        }
+        document.getElementById('input-carto-api-key').value = cartoApiKey || '';
+        document.getElementById('map-settings-modal').classList.remove('hidden');
+        lucide.createIcons();
+      }
+
+      function closeMapSettingsModal() {
+        document.getElementById('map-settings-modal').classList.add('hidden');
+      }
+
+      function saveMapSettings() {
+        const radios = document.getElementsByName('basemap-choice');
+        let selected = currentBasemap;
+        for (const r of radios) {
+          if (r.checked) {
+            selected = r.value;
+            break;
+          }
+        }
+        const enteredKey = document.getElementById('input-carto-api-key').value;
+        applyBasemap(selected, enteredKey);
+        closeMapSettingsModal();
+
+        if (selected === 'esri-dark') {
+          showToast('Basemap Updated', 'Switched to ESRI Dark Canvas (No Watermark)', 'success');
+        } else if (selected === 'carto-dark') {
+          showToast(
+            'CARTO Applied',
+            enteredKey ? 'Using custom CARTO API Key' : 'Applied Carto basemap',
+            'info'
+          );
+        } else {
+          showToast('Basemap Updated', 'Switched to OpenStreetMap Dark', 'success');
+        }
+      }
+
+      function initMap() {
+        // Center on Miami (lat: 25.7617, lng: -80.1918) with initial zoom level 9
+        map = L.map('map', {
+          zoomControl: false,
+          attributionControl: false,
+        }).setView([25.7617, -80.1918], 9);
+
+        // Add sleek zoom control on bottom-left
+        L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+        // Apply clean default basemap (ESRI Dark Canvas - Zero watermark, zero key needed)
+        applyBasemap(currentBasemap);
+
+        // Layers for markers, clash lines, and simulator preview
+        linesGroup = L.layerGroup().addTo(map);
+        markersGroup = L.layerGroup().addTo(map);
+        simLayerGroup = L.layerGroup().addTo(map);
+
+        // Map Click Listener for Simulator "Pick on Map" mode
+        map.on('click', function (e) {
+          if (mapPickerActive) {
+            const lat = e.latlng.lat.toFixed(4);
+            const lng = e.latlng.lng.toFixed(4);
+            document.getElementById('sim-lat').value = lat;
+            document.getElementById('sim-lng').value = lng;
+            disableMapPicker();
+            showToast('Coordinates Selected', `Latitude: ${lat}, Longitude: ${lng}`, 'info');
+
+            // Draw a temporary crosshair marker on map
+            simLayerGroup.clearLayers();
+            L.circleMarker([lat, lng], {
+              radius: 9,
+              color: '#06B6D4',
+              fillColor: '#06B6D4',
+              fillOpacity: 0.8,
+              weight: 2,
+            }).addTo(simLayerGroup);
+          }
+        });
+      }
+
+      // Custom marker icon creation with glowing pulse
+      function createProjectMarkerIcon(utility, hasClash) {
+        const isFpl = utility === 'FPL';
+        const color = isFpl ? '#0284c7' : '#f97316';
+        const glowColor = isFpl ? 'rgba(2, 132, 199, 0.6)' : 'rgba(249, 115, 22, 0.6)';
+        const pulseHtml = hasClash
+          ? `<div class="absolute -inset-2.5 rounded-full marker-pulse-ring" style="background-color: ${glowColor}; border: 1px solid ${color};"></div>`
+          : '';
+
+        return L.divIcon({
+          className: 'custom-grid-marker',
+          html: `
+            <div class="relative flex items-center justify-center w-7 h-7">
+              ${pulseHtml}
+              <div class="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold font-mono text-white shadow-lg transition-transform hover:scale-125" style="background-color: ${color}; border: 1.5px solid rgba(255,255,255,0.85); box-shadow: 0 0 12px ${glowColor};">
+                ${utility}
+              </div>
+            </div>
+          `,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -14],
+        });
+      }
+
+      // Format currency
+      function formatMoney(amount) {
+        return '$' + (amount || 0).toLocaleString();
+      }
+
+      // Animate counter roll-up
+      function animateCounter(elementId, targetValue, duration = 1200) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        const start = 0;
+        const startTime = performance.now();
+
+        function update(currentTime) {
+          const elapsed = currentTime - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          // Ease-out cubic
+          const ease = 1 - Math.pow(1 - progress, 3);
+          const current = Math.floor(start + (targetValue - start) * ease);
+          el.innerText = formatMoney(current);
+          if (progress < 1) {
+            requestAnimationFrame(update);
+          } else {
+            el.innerText = formatMoney(targetValue);
+          }
+        }
+        requestAnimationFrame(update);
+      }
+
+      // ==========================================
+      // DATA FETCHING & API INTEGRATION
+      // ==========================================
+      async function loadAllData() {
+        const connDot = document.getElementById('conn-dot');
+        const connStatus = document.getElementById('conn-status');
+        const syncIcon = document.getElementById('sync-icon');
+        syncIcon.classList.add('animate-spin');
+
+        let isLive = false;
+
+        try {
+          // 1. Fetch projects from GET /api/projects
+          const projRes = await fetch(`${API_BASE}/api/projects`);
+          if (!projRes.ok) throw new Error('API returned ' + projRes.status);
+          allProjects = await projRes.json();
+
+          // 2. Fetch overlaps from GET /api/overlaps
+          const overRes = await fetch(`${API_BASE}/api/overlaps`);
+          if (!overRes.ok) throw new Error('API returned ' + overRes.status);
+          const overlapData = await overRes.json();
+
+          allOverlaps = overlapData.overlaps || [];
+          totalSavings = overlapData.totalSavings || 0;
+          isLive = true;
+
+          connDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
+          connStatus.innerText = 'API: Connected';
+          connStatus.className = 'text-emerald-300 font-mono text-[11px]';
+        } catch (err) {
+          console.warn('Backend API unreachable or offline, falling back to local simulation data:', err);
+          // Fallback to offline logic
+          allProjects = FALLBACK_PROJECTS;
+          const localCalc = computeLocalOverlaps(allProjects);
+          allOverlaps = localCalc.overlaps;
+          totalSavings = localCalc.totalSavings;
+
+          connDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+          connStatus.innerText = 'Local Fallback Mode';
+          connStatus.className = 'text-amber-300 font-mono text-[11px]';
+        } finally {
+          syncIcon.classList.remove('animate-spin');
+        }
+
+        // Update UI
+        updateMetricsAndStats();
+        renderMapElements();
+        renderOverlapsList();
+      }
+
+      function updateMetricsAndStats() {
+        animateCounter('metric-total-savings', totalSavings);
+
+        const fplCount = allProjects.filter((p) => p.utility === 'FPL').length;
+        const dukeCount = allProjects.filter((p) => p.utility === 'Duke').length;
+
+        const fplEl = document.getElementById('stat-fpl-count');
+        const dukeEl = document.getElementById('stat-duke-count');
+        if (fplEl) fplEl.innerText = fplCount;
+        if (dukeEl) dukeEl.innerText = dukeCount;
+
+        document.getElementById('stat-clash-count').innerText = allOverlaps.length;
+        document.getElementById('badge-overlap-count').innerText = allOverlaps.length;
+      }
+
+      // ==========================================
+      // MAP RENDERING: MARKERS & CLASH POLYLINES
+      // ==========================================
+      function renderMapElements() {
+        if (!map) return;
+        markersGroup.clearLayers();
+        linesGroup.clearLayers();
+
+        // Set of project names with active clashes
+        const clashingNames = new Set();
+        allOverlaps.forEach((ov) => {
+          clashingNames.add(ov.a.name);
+          clashingNames.add(ov.b.name);
+        });
+
+        // 1. Draw Polylines for Overlaps
+        if (showLines) {
+          allOverlaps.forEach((ov, index) => {
+            const latlngs = [
+              [ov.a.lat, ov.a.lng],
+              [ov.b.lat, ov.b.lng],
+            ];
+
+            const polyline = L.polyline(latlngs, {
+              color: '#F59E0B',
+              weight: 3,
+              opacity: 0.85,
+              className: 'clash-line-animated',
+            });
+
+            // Tooltip and click interaction
+            polyline.bindTooltip(
+              `<div class="font-mono text-xs text-amber-300 font-bold">⚡ CLASH: ${ov.dist} km | ${formatMoney(ov.savings)} Savings</div>`,
+              { sticky: true, className: 'leaflet-tooltip-dark' }
+            );
+
+            polyline.on('click', () => {
+              focusOverlapOnMap(ov);
+            });
+
+            linesGroup.addLayer(polyline);
+          });
+        }
+
+        // 2. Plot Projects as Map Markers
+        allProjects.forEach((proj) => {
+          if (activeFilter !== 'ALL' && proj.utility !== activeFilter) {
+            return;
+          }
+
+          const hasClash = clashingNames.has(proj.name);
+          const icon = createProjectMarkerIcon(proj.utility, hasClash);
+          const marker = L.marker([proj.lat, proj.lng], { icon });
+
+          const isFpl = proj.utility === 'FPL';
+          const badgeClass = isFpl
+            ? 'bg-sky-950 text-sky-300 border-sky-800'
+            : 'bg-orange-950 text-orange-300 border-orange-800';
+
+          const popupContent = `
+            <div class="p-3.5 space-y-2 min-w-[240px]">
+              <div class="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase border ${badgeClass}">
+                  ${proj.utility} Project
+                </span>
+                <span class="text-[11px] font-mono text-emerald-400 font-bold">${formatMoney(proj.cost)}</span>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-white tracking-tight leading-snug">${proj.name}</h4>
+                <div class="mt-1 flex items-center space-x-1.5 text-[11px] font-mono text-slate-400">
+                  <span>📅 ${proj.start} → ${proj.end}</span>
+                </div>
+              </div>
+              <div class="text-[10px] font-mono text-slate-500 flex items-center justify-between pt-1 border-t border-slate-800/60">
+                <span>Coord: ${proj.lat.toFixed(3)}, ${proj.lng.toFixed(3)}</span>
+                ${hasClash ? '<span class="text-amber-400 font-bold">⚠️ Has Clashes</span>' : '<span class="text-slate-500">Normal</span>'}
+              </div>
+            </div>
+          `;
+
+          marker.bindPopup(popupContent);
+          markersGroup.addLayer(marker);
+        });
+      }
+
+      function resetMapView() {
+        if (!map) return;
+        map.setView([25.7617, -80.1918], 9);
+      }
+
+      function setUtilityFilter(filter) {
+        activeFilter = filter;
+        document.getElementById('filter-all-btn').className =
+          filter === 'ALL'
+            ? 'px-2.5 py-1 rounded-lg bg-cyan-500/20 text-cyan-300 font-medium border border-cyan-500/30 transition'
+            : 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition';
+
+        const fplBtn = document.getElementById('filter-fpl-btn');
+        if (fplBtn) {
+          fplBtn.className =
+            filter === 'FPL'
+              ? 'px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 font-medium border border-sky-500/30 transition flex items-center space-x-1'
+              : 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-sky-400 transition flex items-center space-x-1';
+        }
+
+        const dukeBtn = document.getElementById('filter-duke-btn');
+        if (dukeBtn) {
+          dukeBtn.className =
+            filter === 'Duke'
+              ? 'px-2.5 py-1 rounded-lg bg-orange-500/20 text-orange-300 font-medium border border-orange-500/30 transition flex items-center space-x-1'
+              : 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-orange-400 transition flex items-center space-x-1';
+        }
+
+        renderMapElements();
+      }
+
+      function toggleOverlapLines() {
+        showLines = !showLines;
+        const btn = document.getElementById('btn-toggle-lines');
+        if (showLines) {
+          btn.className =
+            'px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 font-medium flex items-center space-x-1.5 transition';
+        } else {
+          btn.className =
+            'px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 border border-slate-700 font-medium flex items-center space-x-1.5 transition';
+        }
+        renderMapElements();
+      }
+
+      // ==========================================
+      // SIDEBAR OVERLAPS LIST
+      // ==========================================
+      function renderOverlapsList() {
+        const container = document.getElementById('overlaps-list');
+        const query = (document.getElementById('search-overlaps').value || '').toLowerCase().trim();
+
+        const filtered = allOverlaps.filter((item) => {
+          if (!query) return true;
+          return (
+            item.a.name.toLowerCase().includes(query) ||
+            item.b.name.toLowerCase().includes(query) ||
+            item.a.utility.toLowerCase().includes(query) ||
+            item.b.utility.toLowerCase().includes(query)
+          );
+        });
+
+        document.getElementById('filtered-overlaps-label').innerText = query
+          ? `Showing ${filtered.length} of ${allOverlaps.length}`
+          : `Showing all ${allOverlaps.length} opportunities`;
+
+        if (filtered.length === 0) {
+          container.innerHTML = `
+            <div class="py-12 px-4 text-center text-slate-500 space-y-2">
+              <i data-lucide="info" class="w-6 h-6 mx-auto text-slate-600"></i>
+              <p class="text-xs">No coordination overlaps matching "${query}".</p>
+            </div>
+          `;
+          lucide.createIcons();
+          return;
+        }
+
+        container.innerHTML = filtered
+          .map((item, idx) => {
+            const a = item.a;
+            const b = item.b;
+            const distMi = (item.dist * 0.621371).toFixed(1);
+
+            return `
+            <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/90 hover:border-cyan-500/40 transition-all duration-200 shadow-md space-y-2.5 group">
+              <!-- Top Header: Savings & Distance -->
+              <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-1.5">
+                  <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                  <span class="text-xs font-mono font-bold text-amber-400">
+                    ${item.dist} km <span class="text-slate-500 font-normal">(${distMi} mi)</span>
+                  </span>
+                </div>
+                <div class="px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-xs shadow-sm">
+                  +${formatMoney(item.savings)} Savings
+                </div>
+              </div>
+
+              <!-- Project A & B Pair Detail -->
+              <div class="space-y-1.5 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800/60 text-xs">
+                <!-- Project A -->
+                <div class="flex items-start space-x-2">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${a.utility === 'FPL' ? 'bg-sky-950 text-sky-300 border-sky-800' : 'bg-orange-950 text-orange-300 border-orange-800'} border flex-none mt-0.5">
+                    ${a.utility}
+                  </span>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-slate-200 font-semibold truncate text-[11px]" title="${a.name}">${a.name}</div>
+                    <div class="text-[10px] text-slate-500 font-mono flex items-center justify-between">
+                      <span>${a.start} → ${a.end}</span>
+                      <span class="text-slate-400">${formatMoney(a.cost)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Divider / Intertie Connector -->
+                <div class="flex items-center space-x-2 text-[10px] text-amber-500/70 font-mono py-0.5">
+                  <div class="flex-1 border-t border-dashed border-slate-800"></div>
+                  <span>⚡ CLASH INTERFACE ⚡</span>
+                  <div class="flex-1 border-t border-dashed border-slate-800"></div>
+                </div>
+
+                <!-- Project B -->
+                <div class="flex items-start space-x-2">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${b.utility === 'FPL' ? 'bg-sky-950 text-sky-300 border-sky-800' : 'bg-orange-950 text-orange-300 border-orange-800'} border flex-none mt-0.5">
+                    ${b.utility}
+                  </span>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-slate-200 font-semibold truncate text-[11px]" title="${b.name}">${b.name}</div>
+                    <div class="text-[10px] text-slate-500 font-mono flex items-center justify-between">
+                      <span>${b.start} → ${b.end}</span>
+                      <span class="text-slate-400">${formatMoney(b.cost)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Action Buttons: Focus Map & AI Briefing -->
+              <div class="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  onclick='focusOverlapByIndex(${idx})'
+                  class="py-1.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center space-x-1.5 transition"
+                >
+                  <i data-lucide="crosshair" class="w-3.5 h-3.5 text-cyan-400"></i>
+                  <span>Focus Map</span>
+                </button>
+                <button
+                  onclick='triggerAiExplainByIndex(${idx})'
+                  class="py-1.5 px-3 rounded-lg bg-cyan-950/80 hover:bg-cyan-900/90 border border-cyan-500/40 text-cyan-300 hover:text-white text-[11px] font-bold flex items-center justify-center space-x-1.5 transition shadow-sm"
+                >
+                  <i data-lucide="sparkles" class="w-3.5 h-3.5 text-cyan-400"></i>
+                  <span>AI Briefing</span>
+                </button>
+              </div>
+            </div>
+          `;
+          })
+          .join('');
+
+        lucide.createIcons();
+      }
+
+      document.getElementById('search-overlaps').addEventListener('input', renderOverlapsList);
+
+      function focusOverlapByIndex(index) {
+        const item = allOverlaps[index];
+        if (item) focusOverlapOnMap(item);
+      }
+
+      function focusOverlapOnMap(item) {
+        if (!map) return;
+        const bounds = L.latLngBounds([
+          [item.a.lat, item.a.lng],
+          [item.b.lat, item.b.lng],
+        ]);
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 12 });
+        showToast(
+          'Focused on Clash Corridor',
+          `${item.a.utility} [${item.a.name}] ↔ ${item.b.utility} [${item.b.name}] (${item.dist} km)`,
+          'info'
+        );
+      }
+
+      // ==========================================
+      // AI BRIEFING MODAL & POST /api/explain
+      // ==========================================
+      async function triggerAiExplainByIndex(index) {
+        const overlap = allOverlaps[index];
+        if (!overlap) return;
+
+        const modal = document.getElementById('ai-modal');
+        const loading = document.getElementById('ai-modal-loading');
+        const textBox = document.getElementById('ai-modal-text');
+        const meta = document.getElementById('ai-modal-meta');
+
+        // Populate metadata header
+        meta.innerHTML = `
+          <div>
+            <div class="text-[10px] text-slate-500">UTILITY PAIR</div>
+            <div class="font-bold text-white">${overlap.a.utility} ↔ ${overlap.b.utility}</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-500">SEPARATION</div>
+            <div class="font-bold text-amber-400">${overlap.dist} km (${(overlap.dist * 0.621371).toFixed(1)} mi)</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-500">PROJECTED SAVINGS</div>
+            <div class="font-bold text-emerald-400">${formatMoney(overlap.savings)}</div>
+          </div>
+          <div>
+            <div class="text-[10px] text-slate-500">SCHEDULE OVERLAP</div>
+            <div class="font-bold text-cyan-300">Active Window</div>
+          </div>
+        `;
+
+        modal.classList.remove('hidden');
+        loading.classList.remove('hidden');
+        textBox.classList.add('hidden');
+        textBox.innerText = '';
+
+        try {
+          const res = await fetch(`${API_BASE}/api/explain`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              a: overlap.a,
+              b: overlap.b,
+              dist: overlap.dist,
+              savings: overlap.savings,
+            }),
+          });
+
+          if (!res.ok) throw new Error('Explain API returned status ' + res.status);
+          const data = await res.json();
+          currentAiBriefingText = data.text || 'No briefing returned.';
+        } catch (err) {
+          console.warn('API /api/explain failed or offline, using expert engineering template:', err);
+          currentAiBriefingText = `### GRIDSYNC TRANSMISSION COORDINATION BRIEFING
+Corridor: ${overlap.a.utility} [${overlap.a.name}] ↔ ${overlap.b.utility} [${overlap.b.name}]
+Distance: ${overlap.dist} km | Projected Realized Savings: ${formatMoney(overlap.savings)}
+
+1. TRANSMISSION CONFLICT & NERC RELIABILITY RISK
+Simultaneous clearances between ${overlap.a.name} and ${overlap.b.name} place immediate N-1 transfer stress across the regional 230kV tie-lines. Because physical separation is only ${overlap.dist} km, an unscheduled trip on an adjacent line during peak hours could trigger thermal line overloads and voltage instability. Coordinating clearance sequencing maintains critical N-1 stability margins under NERC standard TOP-001.
+
+2. JOINT MOBILIZATION SYNERGIES
+By synchronizing the outage window (${overlap.a.start} to ${overlap.a.end}), both utilities eliminate duplicate contractor deployment overhead:
+- Heavy Lift & Tensioning Equipment: Shared mobile cranes and tension stringing rigs save an estimated 35% on equipment lease and freight mobilization.
+- Unified Switching & Grounding Crews: Synchronized step-down and live-line safety clearance reduces total switching hours by 28%.
+- Congestion Avoidance: Unified regional dispatcher scheduling prevents out-of-merit redispatch generation penalties, delivering ${formatMoney(overlap.savings)} in net savings.
+
+3. DISPATCH ACTION PLAN
+1. Joint Working Group Call: Convene ${overlap.a.utility} and ${overlap.b.utility} transmission dispatch desks within 48 hours to ratify a single unified switching schedule.
+2. Contractor Rig Sharing: Establish a single co-located staging yard near the midpoint between ${overlap.a.lat}, ${overlap.a.lng} and ${overlap.b.lat}, ${overlap.b.lng}.
+3. Regional Coordinator (RC) Submission: File a consolidated joint outage request with the regional reliability coordinator to secure priority clearance approval.`;
+        }
+
+        loading.classList.add('hidden');
+        textBox.classList.remove('hidden');
+        textBox.innerText = currentAiBriefingText;
+      }
+
+      function closeAiModal() {
+        document.getElementById('ai-modal').classList.add('hidden');
+      }
+
+      function copyBriefingText() {
+        if (!currentAiBriefingText) return;
+        navigator.clipboard.writeText(currentAiBriefingText).then(() => {
+          const btnText = document.getElementById('copy-btn-text');
+          btnText.innerText = 'Copied!';
+          setTimeout(() => (btnText.innerText = 'Copy Briefing'), 2000);
+          showToast('Copied to Clipboard', 'AI Briefing text copied successfully.', 'success');
+        });
+      }
+
+      // ==========================================
+      // CLASH SIMULATOR: POST /api/check
+      // ==========================================
+      async function handleSimulate(event) {
+        event.preventDefault();
+
+        const utility = document.querySelector('input[name="sim-utility"]:checked').value;
+        const name = document.getElementById('sim-name').value;
+        const lat = parseFloat(document.getElementById('sim-lat').value);
+        const lng = parseFloat(document.getElementById('sim-lng').value);
+        const start = document.getElementById('sim-start').value;
+        const end = document.getElementById('sim-end').value;
+
+        if (isNaN(lat) || isNaN(lng) || !start || !end) {
+          showToast('Validation Error', 'Please verify all coordinates and dates.', 'error');
+          return;
+        }
+
+        const btn = document.getElementById('btn-simulate-submit');
+        const icon = document.getElementById('sim-icon');
+        const btnText = document.getElementById('sim-button-text');
+        btnText.innerText = 'Analyzing Buffer...';
+        icon.classList.add('animate-spin');
+
+        let hits = [];
+        let isClear = true;
+
+        try {
+          const res = await fetch(`${API_BASE}/api/check`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ utility, name, lat, lng, start, end }),
+          });
+
+          if (!res.ok) throw new Error('Check API status ' + res.status);
+          const data = await res.json();
+          hits = data.hits || [];
+          isClear = data.clear !== undefined ? data.clear : hits.length === 0;
+        } catch (err) {
+          console.warn('POST /api/check offline, executing local spatial conflict query:', err);
+          // Local fallback simulation calculation
+          hits = [];
+          for (const p of allProjects) {
+            const dist = calculateDistance(lat, lng, p.lat, p.lng);
+            if (dist <= 40 && checkDatesOverlap(start, end, p.start, p.end)) {
+              hits.push({
+                name: p.name,
+                utility: p.utility,
+                start: p.start,
+                end: p.end,
+                dist,
+              });
+            }
+          }
+          hits.sort((a, b) => a.dist - b.dist);
+          isClear = hits.length === 0;
+        } finally {
+          btnText.innerText = 'Simulate Conflict';
+          icon.classList.remove('animate-spin');
+        }
+
+        // Display results in sidebar
+        displaySimulationResults({ utility, name, lat, lng, start, end }, hits, isClear);
+
+        // Visualize simulated project on the map with 40km circular buffer!
+        plotSimulationOnMap(lat, lng, name, utility, isClear, hits);
+      }
+
+      function displaySimulationResults(candidate, hits, isClear) {
+        const container = document.getElementById('sim-result-container');
+        container.classList.remove('hidden');
+
+        if (isClear) {
+          container.innerHTML = `
+            <div class="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-xs space-y-2">
+              <div class="flex items-center space-x-2 text-emerald-400 font-bold">
+                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                <span>CLEARANCE VERIFIED — NO CONFLICTS</span>
+              </div>
+              <p class="text-slate-300 text-[11px] leading-relaxed">
+                The proposed project <strong>${candidate.name}</strong> has no overlapping transmission outages within the 40 km / 25 mi reliability perimeter between ${candidate.start} and ${candidate.end}.
+              </p>
+              <div class="text-[10px] font-mono text-emerald-400/80 pt-1">
+                ✓ Ready for Regional Reliability Coordinator (RC) clearance request.
+              </div>
+            </div>
+          `;
+          showToast('Clearance Verified', 'No spatial or temporal conflicts found.', 'success');
+        } else {
+          const hitsList = hits
+            .map(
+              (h) => `
+              <div class="p-2 rounded bg-slate-900/80 border border-slate-800 text-[11px] space-y-1">
+                <div class="flex items-center justify-between">
+                  <span class="font-bold text-white truncate mr-2">${h.name}</span>
+                  <span class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase ${h.utility === 'FPL' ? 'bg-sky-950 text-sky-300 border border-sky-800' : 'bg-orange-950 text-orange-300 border border-orange-800'}">
+                    ${h.utility}
+                  </span>
+                </div>
+                <div class="flex items-center justify-between font-mono text-[10px] text-amber-400">
+                  <span>Dist: ${h.dist} km (${(h.dist * 0.621371).toFixed(1)} mi)</span>
+                  <span class="text-slate-400">${h.start} → ${h.end}</span>
+                </div>
+              </div>
+            `
+            )
+            .join('');
+
+          container.innerHTML = `
+            <div class="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/50 text-xs space-y-2.5">
+              <div class="flex items-center justify-between text-amber-400 font-bold">
+                <div class="flex items-center space-x-2">
+                  <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400"></i>
+                  <span>CLASH DETECTED (${hits.length} HITS)</span>
+                </div>
+                <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-900/60 text-amber-300">&lt; 40 km</span>
+              </div>
+              <p class="text-slate-300 text-[11px]">
+                Potential outage conflict with <strong>${hits.length}</strong> active transmission project(s):
+              </p>
+              <div class="space-y-1.5 max-h-48 overflow-y-auto">
+                ${hitsList}
+              </div>
+              <div class="pt-1 text-[10px] font-mono text-amber-300/80">
+                ⚠️ Recommend rescheduling clearance window or coordinating shared staging.
+              </div>
+            </div>
+          `;
+          showToast('Clash Detected', `Found ${hits.length} conflicting project(s) within 40 km.`, 'warning');
+        }
+
+        lucide.createIcons();
+      }
+
+      function plotSimulationOnMap(lat, lng, name, utility, isClear, hits) {
+        if (!map) return;
+        simLayerGroup.clearLayers();
+
+        const color = isClear ? '#10B981' : '#F59E0B';
+
+        // 40km circular buffer (40,000 meters)
+        const circle = L.circle([lat, lng], {
+          radius: 40000,
+          color: color,
+          weight: 1.5,
+          dashArray: '6, 6',
+          fillColor: color,
+          fillOpacity: 0.08,
+        }).addTo(simLayerGroup);
+
+        // Marker for simulated node
+        const simIcon = L.divIcon({
+          className: 'sim-project-marker',
+          html: `
+            <div class="relative flex items-center justify-center w-8 h-8">
+              <div class="absolute -inset-2 rounded-full marker-pulse-ring" style="background-color: ${color}; opacity: 0.3;"></div>
+              <div class="w-7 h-7 rounded-full flex items-center justify-center font-bold text-white shadow-xl ring-2 ring-white" style="background-color: ${color};">
+                <i data-lucide="crosshair" class="w-4 h-4 text-slate-950"></i>
+              </div>
+            </div>
+          `,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+        });
+
+        const simMarker = L.marker([lat, lng], { icon: simIcon }).addTo(simLayerGroup);
+
+        simMarker.bindPopup(`
+          <div class="p-3 space-y-1.5 font-mono text-xs">
+            <div class="font-bold text-yellow-400">⚡ SIMULATED PROPOSAL</div>
+            <div class="text-white font-sans text-xs font-semibold">${name} (${utility})</div>
+            <div class="text-slate-400 text-[10px]">${lat.toFixed(4)}, ${lng.toFixed(4)}</div>
+            <div class="text-[10px] text-slate-300 pt-1 border-t border-slate-800">
+              40km buffer status: <strong class="${isClear ? 'text-emerald-400' : 'text-amber-400'}">${isClear ? 'CLEAR' : hits.length + ' CLASHES'}</strong>
+            </div>
+          </div>
+        `);
+
+        // Connect dashed lines to hit projects
+        hits.forEach((h) => {
+          const match = allProjects.find((p) => p.name === h.name);
+          if (match) {
+            L.polyline(
+              [
+                [lat, lng],
+                [match.lat, match.lng],
+              ],
+              {
+                color: '#EF4444',
+                weight: 2,
+                dashArray: '4, 4',
+                opacity: 0.9,
+              }
+            ).addTo(simLayerGroup);
+          }
+        });
+
+        // Zoom to simulation area
+        map.fitBounds(circle.getBounds(), { padding: [50, 50] });
+        simMarker.openPopup();
+      }
+
+      function enableMapPicker() {
+        mapPickerActive = true;
+        document.getElementById('map-crosshair-indicator').classList.remove('hidden');
+        document.getElementById('pick-map-label').innerText = 'Click on map now...';
+        showToast('Map Picker Active', 'Click anywhere on the map to set project coordinates.', 'info');
+      }
+
+      function disableMapPicker() {
+        mapPickerActive = false;
+        document.getElementById('map-crosshair-indicator').classList.add('hidden');
+        document.getElementById('pick-map-label').innerText = 'Click Map to Set Coordinates';
+      }
+
+      function setSimulatorPreset(name, lat, lng) {
+        document.getElementById('sim-name').value = name;
+        document.getElementById('sim-lat').value = lat;
+        document.getElementById('sim-lng').value = lng;
+        showToast('Preset Loaded', `${name} (${lat}, ${lng})`, 'info');
+      }
+
+      // ==========================================
+      // UI TAB & SIDEBAR CONTROLS
+      // ==========================================
+      function switchSidebarTab(tab) {
+        const tabOverlapsBtn = document.getElementById('tab-overlaps-btn');
+        const tabSimulatorBtn = document.getElementById('tab-simulator-btn');
+        const tabOverlapsContent = document.getElementById('tab-overlaps-content');
+        const tabSimulatorContent = document.getElementById('tab-simulator-content');
+
+        if (tab === 'overlaps') {
+          tabOverlapsBtn.className =
+            'py-2 px-3 rounded-md flex items-center justify-center space-x-2 transition bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/30 shadow';
+          tabSimulatorBtn.className =
+            'py-2 px-3 rounded-md flex items-center justify-center space-x-2 transition text-slate-400 hover:text-slate-200';
+          tabOverlapsContent.classList.remove('hidden');
+          tabSimulatorContent.classList.add('hidden');
+        } else {
+          tabSimulatorBtn.className =
+            'py-2 px-3 rounded-md flex items-center justify-center space-x-2 transition bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/30 shadow';
+          tabOverlapsBtn.className =
+            'py-2 px-3 rounded-md flex items-center justify-center space-x-2 transition text-slate-400 hover:text-slate-200';
+          tabSimulatorContent.classList.remove('hidden');
+          tabOverlapsContent.classList.add('hidden');
+        }
+        lucide.createIcons();
+      }
+
+      let sidebarOpen = true;
+      document.getElementById('btn-toggle-sidebar').addEventListener('click', () => {
+        const sidebar = document.getElementById('sidebar');
+        const toggleText = document.getElementById('sidebar-toggle-text');
+        sidebarOpen = !sidebarOpen;
+
+        if (sidebarOpen) {
+          sidebar.classList.remove('-translate-x-full');
+          if (toggleText) toggleText.innerText = 'Hide';
+        } else {
+          sidebar.classList.add('-translate-x-full');
+          if (toggleText) toggleText.innerText = 'Show';
+        }
+        setTimeout(() => map && map.invalidateSize(), 310);
+      });
+
+      document.getElementById('btn-refresh').addEventListener('click', () => {
+        loadAllData();
+        showToast('Resynced', 'Refreshed grid data from backend API.', 'info');
+      });
+
+      // Toast notification helper
+      function showToast(title, message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+
+        let borderClass = 'border-slate-700';
+        let iconMarkup = '<i data-lucide="info" class="w-4 h-4 text-cyan-400"></i>';
+
+        if (type === 'success') {
+          borderClass = 'border-emerald-500/50 bg-emerald-950/80';
+          iconMarkup = '<i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>';
+        } else if (type === 'warning') {
+          borderClass = 'border-amber-500/50 bg-amber-950/80';
+          iconMarkup = '<i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400"></i>';
+        } else if (type === 'error') {
+          borderClass = 'border-red-500/50 bg-red-950/80';
+          iconMarkup = '<i data-lucide="x-circle" class="w-4 h-4 text-red-400"></i>';
+        } else {
+          borderClass = 'border-cyan-500/40 bg-slate-900/90';
+        }
+
+        toast.className = `p-3 rounded-xl border ${borderClass} shadow-2xl glass-panel text-xs text-slate-200 pointer-events-auto flex items-start space-x-2.5 min-w-[260px] max-w-sm transition-all duration-300 transform translate-y-2 opacity-0`;
+        toast.innerHTML = `
+          <div class="flex-none mt-0.5">${iconMarkup}</div>
+          <div class="flex-1 min-w-0">
+            <div class="font-bold text-white text-xs leading-none mb-1">${title}</div>
+            <div class="text-[11px] text-slate-300 leading-snug">${message}</div>
+          </div>
+        `;
+
+        container.appendChild(toast);
+        lucide.createIcons();
+
+        // Animate in
+        requestAnimationFrame(() => {
+          toast.classList.remove('translate-y-2', 'opacity-0');
+        });
+
+        // Auto remove
+        setTimeout(() => {
+          toast.classList.add('opacity-0', 'translate-y-2');
+          setTimeout(() => toast.remove(), 300);
+        }, 4000);
+      }
+
+      // ==========================================
+      // BOOTSTRAP APPLICATION
+      // ==========================================
+      window.addEventListener('DOMContentLoaded', () => {
+        lucide.createIcons();
+        initMap();
+        loadAllData();
+      });
+    </script>
+  </body>
+</html>

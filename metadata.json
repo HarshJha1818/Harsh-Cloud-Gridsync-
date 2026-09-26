@@ -1,0 +1,6 @@
+{
+  "name": "GridSync - Sperry Tech Challenge",
+  "description": "Utility transmission coordination platform and clash dispatch dashboard for the Sperry Tech GridLock Challenge.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
